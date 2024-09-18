@@ -1,0 +1,34 @@
+name: Build C++ Project
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Install C++ build tools
+      run: |
+        choco install visualstudio2019buildtools --params "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --includeOptional"
+
+    - name: Configure and build using CMake
+      run: |
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build . --config Release
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: Executable
+        path: build/Release/your_executable.exe
