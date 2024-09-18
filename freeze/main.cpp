@@ -8,14 +8,11 @@ typedef LONG(NTAPI* _NtResumeProcess)(IN HANDLE ProcessHandle);
 HHOOK g_Hook = NULL;
 HHOOK g_MouseHook = NULL;
 HANDLE ProcessHandle = 0;
-HMODULE ntdll = 0;
-#define LAST_MINUTES 60 //max last time
-
 ULONGLONG press_a = 0;
 ULONGLONG press_b = 200;
-ULONGLONG start_time = GetTickCount64();
+HMODULE ntdll = 0;
 
-void EnableDebugPriv() {
+void EnableDebugPriv(){
 	HANDLE hToken;
 	LUID luid;
 	TOKEN_PRIVILEGES tkp;
@@ -28,42 +25,66 @@ void EnableDebugPriv() {
 	CloseHandle(hToken);
 }
 
-LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam){
 	if (nCode == 0) return 1;
 	return CallNextHookEx(g_MouseHook, nCode, wParam, lParam);
 }
 
+
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-	if (nCode == HC_ACTION && wParam == WM_KEYDOWN) {
-		LPKBDLLHOOKSTRUCT pKbs = (LPKBDLLHOOKSTRUCT)lParam;
+    if (nCode == HC_ACTION && wParam == WM_KEYDOWN) {
+        LPKBDLLHOOKSTRUCT pKbs = (LPKBDLLHOOKSTRUCT)lParam;
+
+        // 检查是否按下 Win 键 (左 Win 键: VK_LWIN, 右 Win 键: VK_RWIN)
+        if (pKbs->vkCode == VK_LWIN || pKbs->vkCode == VK_RWIN) {
+            return 1; // 返回1来阻止 Win 键事件
+        }
+		
+		// 检查是否按下 Ctrl、Shift、Alt 和 F12
+        bool ctrlPressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+        bool shiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+        bool altPressed = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+        bool f12Pressed = (pKbs->vkCode == VK_F12);
+
+        // 当 Ctrl + Shift + Alt + F12 同时按下时触发解锁
+        if (ctrlPressed && shiftPressed && altPressed && f12Pressed) {
+            ((_NtResumeProcess)GetProcAddress(ntdll, "NtResumeProcess"))(ProcessHandle);
+            exit(0); // 退出程序
+        }
+        
 		// https://www.millisecond.com/support/docs/v6/html/language/scancodes.htm
-		if (pKbs->scanCode == 0x2a) { //LShift
-			press_a = GetTickCount64();
-		}
-		else if (pKbs->scanCode == 0x36) { //RShift
-			press_b = GetTickCount64();
-		}
-		if ((max(press_a, press_b) - min(press_a, press_b) < 100) || (GetTickCount64() - start_time > 1000 * 60 * LAST_MINUTES)) {
-			((_NtResumeProcess)GetProcAddress(ntdll, "NtResumeProcess"))(ProcessHandle);
-			exit(0);
-		}
-	}
-	if (nCode >= 0)  return 1;
-	else return CallNextHookEx(g_Hook, nCode, wParam, lParam);
+        // 检查 Shift 键组合的逻辑
+        //if (pKbs->scanCode == 0x2a) { //LShift
+        //    press_a = GetTickCount64();
+        //} else if (pKbs->scanCode == 0x36) { //RShift
+       //     press_b = GetTickCount64();
+       // }
+        
+        // 如果同时按下左右Shift键
+       // if (max(press_a, press_b) - min(press_a, press_b) < 100) {
+        //    ((_NtResumeProcess)GetProcAddress(ntdll, "NtResumeProcess"))(ProcessHandle);
+       //     exit(0);
+        //}
+    }
+
+    if (nCode >= 0) return 1;
+    else return CallNextHookEx(g_Hook, nCode, wParam, lParam);
 }
+
+
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-DWORD FindProcessId(const std::wstring& processName) {
+DWORD FindProcessId(const std::wstring& processName){
 	PROCESSENTRY32 processInfo;
 	processInfo.dwSize = sizeof(processInfo);
 	HANDLE processesSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
 	if (processesSnapshot == INVALID_HANDLE_VALUE)return 0;
 	Process32First(processesSnapshot, &processInfo);
-	while (Process32Next(processesSnapshot, &processInfo)) {
-		if (!processName.compare(processInfo.szExeFile)) {
+	while (Process32Next(processesSnapshot, &processInfo)){
+		if (!processName.compare(processInfo.szExeFile)){
 			CloseHandle(processesSnapshot);
 			return processInfo.th32ProcessID;
 		}
